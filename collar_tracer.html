@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>CGC Collar Tracer</title>
+<style>
+  :root {
+    --green: #1a3d1a; --green-mid: #2d6e2d; --green-lite: #4a9448;
+    --gold: #c8972a; --gold-dark: #9a6e1a;
+    --dark: #0f1a0f; --mid: #1e2e1e;
+    --text: #e8ede8; --muted: #7a9070;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  body { font-family: 'Helvetica Neue', sans-serif; background: var(--dark); color: var(--text); min-height: 100vh; padding-bottom: 2rem; }
+
+  header { background: linear-gradient(135deg, var(--green), var(--dark)); padding: 1.4rem 1.2rem 1rem; border-bottom: 1px solid rgba(200,151,42,0.3); }
+  .header-tag { font-size: 0.6rem; letter-spacing: 0.15em; color: var(--gold); text-transform: uppercase; margin-bottom: 0.3rem; font-family: monospace; }
+  header h1 { font-size: 1.6rem; font-weight: 900; color: #fff; }
+  header p { font-size: 0.78rem; color: var(--muted); margin-top: 0.3rem; }
+
+  .gps-bar { display: flex; align-items: center; gap: 0.6rem; background: var(--mid); padding: 0.6rem 1.2rem; border-bottom: 1px solid rgba(255,255,255,0.06); font-family: monospace; font-size: 0.68rem; }
+  .gps-dot { width: 8px; height: 8px; border-radius: 50%; background: #888; flex-shrink: 0; transition: background 0.3s; }
+  .gps-dot.active { background: #4caf50; box-shadow: 0 0 6px #4caf50; }
+  .gps-dot.error { background: #ef4444; }
+  .gps-coords { color: var(--gold); flex: 1; }
+  .gps-acc { color: var(--muted); }
+
+  main { padding: 1rem; }
+
+  /* Hole selector */
+  .hole-nav { display: flex; align-items: center; justify-content: space-between; background: var(--mid); border-radius: 14px; padding: 0.8rem 1rem; margin-bottom: 1rem; border: 1px solid rgba(255,255,255,0.07); }
+  .hole-nav button { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); color: var(--text); border-radius: 8px; padding: 0.5rem 1rem; font-size: 1.2rem; cursor: pointer; }
+  .hole-num { font-size: 2.8rem; font-weight: 900; color: var(--gold); line-height: 1; text-align: center; }
+  .hole-info { font-size: 0.65rem; color: var(--muted); text-align: center; letter-spacing: 0.1em; margin-top: 2px; }
+
+  /* Status card */
+  .status-card { background: var(--mid); border-radius: 14px; padding: 1rem; margin-bottom: 1rem; border: 1px solid rgba(255,255,255,0.07); }
+  .status-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
+  .status-label { font-size: 0.65rem; color: var(--muted); letter-spacing: 0.1em; text-transform: uppercase; }
+  .status-value { font-size: 1.1rem; font-weight: 700; color: #fff; }
+  .status-value.active { color: #4caf50; }
+  .status-value.recording { color: #ef4444; }
+
+  /* Progress dots */
+  .progress-dots { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 0.5rem; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.15); }
+  .dot.done { background: #4caf50; border-color: #4caf50; }
+  .dot.current { background: var(--gold); border-color: var(--gold); animation: pulse 1s infinite; }
+  @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.5; } }
+
+  /* Live trace visualization */
+  .trace-vis { background: rgba(15,26,15,0.8); border-radius: 12px; padding: 0.8rem; margin-bottom: 1rem; border: 1px solid var(--green-mid); min-height: 60px; }
+  .trace-count { font-size: 2rem; font-weight: 900; color: var(--gold); text-align: center; line-height: 1; }
+  .trace-label { font-size: 0.7rem; color: var(--muted); text-align: center; margin-top: 2px; }
+  .trace-points-preview { font-family: monospace; font-size: 0.6rem; color: #4a5e4a; margin-top: 6px; max-height: 50px; overflow: hidden; text-align: center; }
+
+  /* Buttons */
+  .btn-record {
+    width: 100%; padding: 1.1rem; border: none; border-radius: 14px;
+    font-size: 1.2rem; font-weight: 900; cursor: pointer;
+    background: #ef4444; color: #fff;
+    box-shadow: 0 4px 0 #a01e1e; margin-bottom: 0.8rem;
+    letter-spacing: 0.03em; transition: transform 0.1s;
+  }
+  .btn-record:active { transform: translateY(2px); box-shadow: 0 2px 0 #a01e1e; }
+  .btn-record.recording { background: #1e2e1e; color: #ef4444; box-shadow: 0 4px 0 #0a0f0a; border: 2px solid #ef4444; }
+
+  .btn-complete {
+    width: 100%; padding: 1rem; border: none; border-radius: 14px;
+    font-size: 1rem; font-weight: 700; cursor: pointer;
+    background: var(--gold); color: #000;
+    box-shadow: 0 4px 0 var(--gold-dark); margin-bottom: 0.8rem;
+    transition: transform 0.1s;
+  }
+  .btn-complete:active { transform: translateY(2px); box-shadow: 0 2px 0 var(--gold-dark); }
+  .btn-complete:disabled { background: #2d3e2d; color: #4a5e4a; box-shadow: none; }
+
+  .btn-discard {
+    width: 100%; padding: 0.8rem; border: 1px solid rgba(239,68,68,0.3); border-radius: 12px;
+    font-size: 0.9rem; font-weight: 600; cursor: pointer;
+    background: rgba(239,68,68,0.08); color: #ef4444; margin-bottom: 1rem;
+  }
+
+  /* Summary */
+  .summary { background: var(--mid); border-radius: 14px; padding: 1rem; margin-bottom: 1rem; border: 1px solid rgba(255,255,255,0.07); }
+  .summary-title { font-size: 0.65rem; color: var(--muted); letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 0.8rem; }
+  .summary-row { display: flex; justify-content: space-between; align-items: center; padding: 0.35rem 0; border-bottom: 1px solid rgba(255,255,255,0.04); font-size: 0.78rem; }
+  .summary-row:last-child { border-bottom: none; }
+  .summary-hole { color: var(--muted); }
+  .summary-pts { color: var(--gold); font-weight: 700; }
+  .summary-done { color: #4caf50; }
+
+  /* Export */
+  .btn-export {
+    width: 100%; padding: 1rem; border: none; border-radius: 14px;
+    font-size: 1rem; font-weight: 700; cursor: pointer;
+    background: var(--green-mid); color: #fff;
+    box-shadow: 0 4px 0 #1a3d1a; margin-bottom: 0.8rem;
+    transition: transform 0.1s;
+  }
+  .btn-export:active { transform: translateY(2px); }
+  .btn-export:disabled { background: #1e2e1e; color: #4a5e4a; box-shadow: none; }
+
+  .instructions { background: rgba(200,151,42,0.08); border-left: 3px solid var(--gold); border-radius: 0 10px 10px 0; padding: 0.8rem 1rem; font-size: 0.75rem; color: var(--muted); line-height: 1.6; margin-bottom: 1rem; }
+  .instructions strong { color: var(--gold); }
+
+  .toast { position: fixed; bottom: 1.5rem; left: 50%; transform: translateX(-50%) translateY(80px); background: #4caf50; color: #000; padding: 0.6rem 1.4rem; border-radius: 30px; font-size: 0.85rem; font-weight: 700; transition: transform 0.3s; z-index: 100; white-space: nowrap; }
+  .toast.show { transform: translateX(-50%) translateY(0); }
+  .toast.error { background: #ef4444; color: #fff; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-tag">Colorado Golf Caddie · Field Tool</div>
+  <h1>Collar Tracer</h1>
+  <p>Walk the green collar perimeter to map each hole's putting surface boundary.</p>
+</header>
+
+<div class="gps-bar">
+  <div class="gps-dot" id="gpsDot"></div>
+  <div class="gps-coords" id="gpsCoords">Acquiring GPS...</div>
+  <div class="gps-acc" id="gpsAcc"></div>
+</div>
+
+<main>
+
+  <div class="instructions">
+    <strong>How to use:</strong> Navigate to the hole, stand at the collar edge, tap <strong>Start Recording</strong>, then walk slowly around the entire green collar perimeter. The app captures your GPS position every second. When you've completed the full loop, tap <strong>Complete This Green</strong>. Aim for ±5m GPS accuracy before starting.
+  </div>
+
+  <!-- Hole nav -->
+  <div class="hole-nav">
+    <button onclick="prevHole()">◀</button>
+    <div>
+      <div class="hole-num" id="holeNum">1</div>
+      <div class="hole-info" id="holeInfo">PAR 4 · TAP TO BEGIN</div>
+    </div>
+    <button onclick="nextHole()">▶</button>
+  </div>
+
+  <!-- GPS status -->
+  <div class="status-card">
+    <div class="status-row">
+      <span class="status-label">Recording Status</span>
+      <span class="status-value" id="recordingStatus">Not started</span>
+    </div>
+    <div class="status-row">
+      <span class="status-label">GPS Accuracy</span>
+      <span class="status-value" id="accuracyStatus">Waiting...</span>
+    </div>
+    <div class="status-row">
+      <span class="status-label">Elapsed Time</span>
+      <span class="status-value" id="elapsedTime">0s</span>
+    </div>
+  </div>
+
+  <!-- Live trace -->
+  <div class="trace-vis">
+    <div class="trace-count" id="traceCount">0</div>
+    <div class="trace-label">vertices captured this green</div>
+    <div class="trace-points-preview" id="tracePreview">Start recording to capture collar polygon</div>
+  </div>
+
+  <!-- Controls -->
+  <button class="btn-record" id="recordBtn" onclick="toggleRecording()">
+    ● Start Recording
+  </button>
+
+  <button class="btn-complete" id="completeBtn" onclick="completeGreen()" disabled>
+    ✓ Complete This Green
+  </button>
+
+  <button class="btn-discard" id="discardBtn" onclick="discardGreen()" style="display:none">
+    ✕ Discard & Restart This Green
+  </button>
+
+  <!-- Progress -->
+  <div class="summary">
+    <div class="summary-title">Progress — All 18 Greens</div>
+    <div class="progress-dots" id="progressDots"></div>
+    <div id="summaryRows"></div>
+  </div>
+
+  <!-- Export -->
+  <button class="btn-export" id="exportBtn" onclick="exportData()">
+    📧 Email Collar Data to barnes.wade@bcg.com
+  </button>
+
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const HOLES = [
+  {hole:1,  par:4}, {hole:2,  par:4}, {hole:3,  par:3},
+  {hole:4,  par:4}, {hole:5,  par:4}, {hole:6,  par:5},
+  {hole:7,  par:3}, {hole:8,  par:4}, {hole:9,  par:4},
+  {hole:10, par:3}, {hole:11, par:5}, {hole:12, par:3},
+  {hole:13, par:5}, {hole:14, par:3}, {hole:15, par:4},
+  {hole:16, par:4}, {hole:17, par:3}, {hole:18, par:4},
+];
+
+let currentHole = 0;
+let isRecording = false;
+let currentPoints = [];
+let collectedGreens = {}; // { holeNum: [{ lat, lon, acc }] }
+let recordInterval = null;
+let timerInterval = null;
+let elapsedSeconds = 0;
+let currentPos = null;
+
+// GPS
+navigator.geolocation.watchPosition(
+  pos => {
+    currentPos = pos;
+    const lat = pos.coords.latitude.toFixed(6);
+    const lon = pos.coords.longitude.toFixed(6);
+    const acc = Math.round(pos.coords.accuracy);
+    document.getElementById('gpsDot').className = 'gps-dot active';
+    document.getElementById('gpsCoords').textContent = `${lat}°, ${lon}°`;
+    document.getElementById('gpsAcc').textContent = `±${acc}m`;
+    document.getElementById('accuracyStatus').textContent = `±${acc}m`;
+    document.getElementById('accuracyStatus').className =
+      'status-value ' + (acc <= 5 ? 'active' : acc <= 10 ? '' : 'recording');
+  },
+  err => {
+    document.getElementById('gpsDot').className = 'gps-dot error';
+    document.getElementById('gpsCoords').textContent = 'GPS error';
+  },
+  { enableHighAccuracy: true, maximumAge: 500, timeout: 15000 }
+);
+
+function toggleRecording() {
+  if (!currentPos) { showToast('No GPS fix yet', true); return; }
+  const acc = currentPos.coords.accuracy;
+  if (!isRecording && acc > 20) {
+    showToast(`GPS accuracy ±${Math.round(acc)}m — wait for better fix`, true);
+    return;
+  }
+  isRecording ? stopRecording() : startRecording();
+}
+
+function startRecording() {
+  isRecording = true;
+  currentPoints = [];
+  elapsedSeconds = 0;
+
+  document.getElementById('recordBtn').textContent = '■ Stop Recording';
+  document.getElementById('recordBtn').className = 'btn-record recording';
+  document.getElementById('recordingStatus').textContent = 'RECORDING';
+  document.getElementById('recordingStatus').className = 'status-value recording';
+  document.getElementById('completeBtn').disabled = false;
+  document.getElementById('discardBtn').style.display = 'block';
+
+  // Capture every 1 second
+  recordInterval = setInterval(capturePoint, 1000);
+
+  // Timer
+  timerInterval = setInterval(() => {
+    elapsedSeconds++;
+    document.getElementById('elapsedTime').textContent = `${elapsedSeconds}s`;
+  }, 1000);
+
+  capturePoint(); // Capture immediately
+  showToast('Recording started — walk the collar');
+}
+
+function stopRecording() {
+  isRecording = false;
+  clearInterval(recordInterval);
+  clearInterval(timerInterval);
+  recordInterval = null;
+
+  document.getElementById('recordBtn').textContent = '● Resume Recording';
+  document.getElementById('recordBtn').className = 'btn-record';
+  document.getElementById('recordingStatus').textContent = `Paused (${currentPoints.length} pts)`;
+  document.getElementById('recordingStatus').className = 'status-value';
+}
+
+function capturePoint() {
+  if (!currentPos) return;
+  const pt = {
+    lat: parseFloat(currentPos.coords.latitude.toFixed(7)),
+    lon: parseFloat(currentPos.coords.longitude.toFixed(7)),
+    acc: Math.round(currentPos.coords.accuracy),
+    t: elapsedSeconds,
+  };
+  currentPoints.push(pt);
+  updateTraceUI();
+}
+
+function updateTraceUI() {
+  document.getElementById('traceCount').textContent = currentPoints.length;
+  if (currentPoints.length > 0) {
+    const last = currentPoints[currentPoints.length - 1];
+    const preview = currentPoints.slice(-3).map(p =>
+      `${p.lat}, ${p.lon} (±${p.acc}m)`
+    ).join('\n');
+    document.getElementById('tracePreview').textContent = preview;
+  }
+}
+
+function completeGreen() {
+  if (currentPoints.length < 10) {
+    showToast(`Only ${currentPoints.length} points — keep walking`, true);
+    return;
+  }
+
+  // Stop recording if still going
+  if (isRecording) stopRecording();
+
+  const holeNum = HOLES[currentHole].hole;
+  collectedGreens[holeNum] = [...currentPoints];
+
+  // Reset UI
+  currentPoints = [];
+  isRecording = false;
+  clearInterval(recordInterval);
+  clearInterval(timerInterval);
+  elapsedSeconds = 0;
+
+  document.getElementById('recordBtn').textContent = '● Start Recording';
+  document.getElementById('recordBtn').className = 'btn-record';
+  document.getElementById('recordingStatus').textContent = 'Completed ✓';
+  document.getElementById('recordingStatus').className = 'status-value active';
+  document.getElementById('completeBtn').disabled = true;
+  document.getElementById('discardBtn').style.display = 'none';
+  document.getElementById('traceCount').textContent = '0';
+  document.getElementById('tracePreview').textContent = 'Green saved — move to next hole';
+  document.getElementById('elapsedTime').textContent = '0s';
+
+  updateProgressUI();
+  showToast(`✓ Hole ${holeNum} collar saved (${collectedGreens[holeNum].length} pts)`);
+}
+
+function discardGreen() {
+  if (!confirm(`Discard all recorded points for hole ${HOLES[currentHole].hole}?`)) return;
+  currentPoints = [];
+  if (isRecording) stopRecording();
+  clearInterval(timerInterval);
+  elapsedSeconds = 0;
+  isRecording = false;
+  document.getElementById('recordBtn').textContent = '● Start Recording';
+  document.getElementById('recordBtn').className = 'btn-record';
+  document.getElementById('recordingStatus').textContent = 'Discarded';
+  document.getElementById('recordingStatus').className = 'status-value';
+  document.getElementById('completeBtn').disabled = true;
+  document.getElementById('discardBtn').style.display = 'none';
+  document.getElementById('traceCount').textContent = '0';
+  document.getElementById('tracePreview').textContent = 'Start recording to capture collar polygon';
+  document.getElementById('elapsedTime').textContent = '0s';
+  showToast('Discarded — start fresh');
+}
+
+function prevHole() {
+  if (isRecording) { showToast('Stop recording before changing hole', true); return; }
+  if (currentHole > 0) { currentHole--; updateHoleUI(); }
+}
+
+function nextHole() {
+  if (isRecording) { showToast('Stop recording before changing hole', true); return; }
+  if (currentHole < 17) { currentHole++; updateHoleUI(); }
+}
+
+function updateHoleUI() {
+  const h = HOLES[currentHole];
+  document.getElementById('holeNum').textContent = h.hole;
+  const done = collectedGreens[h.hole];
+  document.getElementById('holeInfo').textContent =
+    `PAR ${h.par} · ${done ? `✓ ${done.length} PTS SAVED` : 'TAP TO BEGIN'}`;
+  document.getElementById('recordingStatus').textContent =
+    done ? `Completed (${done.length} pts)` : 'Not started';
+  document.getElementById('recordingStatus').className =
+    done ? 'status-value active' : 'status-value';
+  document.getElementById('traceCount').textContent = '0';
+  document.getElementById('tracePreview').textContent =
+    done ? `Collar saved — ${done.length} vertices` : 'Start recording to capture collar polygon';
+  document.getElementById('elapsedTime').textContent = '0s';
+  document.getElementById('completeBtn').disabled = true;
+  document.getElementById('discardBtn').style.display = 'none';
+}
+
+function updateProgressUI() {
+  const dotsEl = document.getElementById('progressDots');
+  const rowsEl = document.getElementById('summaryRows');
+  dotsEl.innerHTML = '';
+  rowsEl.innerHTML = '';
+
+  HOLES.forEach(h => {
+    const done = collectedGreens[h.hole];
+    const isCurrent = HOLES[currentHole].hole === h.hole;
+    const dot = document.createElement('div');
+    dot.className = 'dot' + (done ? ' done' : isCurrent ? ' current' : '');
+    dotsEl.appendChild(dot);
+
+    if (done) {
+      const row = document.createElement('div');
+      row.className = 'summary-row';
+      row.innerHTML = `<span class="summary-hole">Hole ${h.hole} · Par ${h.par}</span>
+        <span class="summary-pts">${done.length} pts</span>
+        <span class="summary-done">✓</span>`;
+      rowsEl.appendChild(row);
+    }
+  });
+}
+
+function exportData() {
+  const completed = Object.keys(collectedGreens).length;
+  if (completed === 0) { showToast('No greens recorded yet', true); return; }
+
+  const geojson = {
+    type: 'FeatureCollection',
+    collected_date: new Date().toISOString().split('T')[0],
+    course: 'Copper Creek Golf Club',
+    features: Object.entries(collectedGreens).map(([holeNum, points]) => ({
+      type: 'Feature',
+      properties: {
+        hole: parseInt(holeNum),
+        par: HOLES.find(h => h.hole === parseInt(holeNum))?.par,
+        vertex_count: points.length,
+        avg_accuracy_m: Math.round(points.reduce((s, p) => s + p.acc, 0) / points.length),
+      },
+      geometry: {
+        type: 'Polygon',
+        coordinates: [[
+          ...points.map(p => [p.lon, p.lat]),
+          [points[0].lon, points[0].lat], // close the polygon
+        ]],
+      },
+    })),
+  };
+
+  const json = JSON.stringify(geojson, null, 2);
+  const subject = encodeURIComponent(`Copper Creek Collar Polygons — ${completed} greens — ${new Date().toISOString().split('T')[0]}`);
+  const body = encodeURIComponent(
+    `Collar polygon data collected on ${new Date().toISOString().split('T')[0]}.\n` +
+    `Greens completed: ${completed}/18\n\n` +
+    `Paste into QGIS or the app's collar polygon database.\n\n` +
+    json
+  );
+  window.location.href = `mailto:barnes.wade@bcg.com?subject=${subject}&body=${body}`;
+  showToast('Opening Outlook...');
+}
+
+function showToast(msg, isError = false) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast show' + (isError ? ' error' : '');
+  setTimeout(() => t.className = 'toast' + (isError ? ' error' : ''), 2800);
+}
+
+// Init
+updateProgressUI();
+</script>
+</body>
+</html>
